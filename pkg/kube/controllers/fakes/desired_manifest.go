@@ -37,7 +37,7 @@ func (fake *FakeDesiredManifest) DesiredManifest(arg1 context.Context, arg2 stri
 		arg2 string
 		arg3 string
 	}{arg1, arg2, arg3})
-	fake.recordInvocation("DesiredManifest", []interface{}{arg1, arg2, arg3})
+	fake.recordInvocation("InstanceGroupProperties", []interface{}{arg1, arg2, arg3})
 	fake.desiredManifestMutex.Unlock()
 	if fake.DesiredManifestStub != nil {
 		return fake.DesiredManifestStub(arg1, arg2, arg3)

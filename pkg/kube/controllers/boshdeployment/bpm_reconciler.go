@@ -38,15 +38,15 @@ type BPMConverter interface {
 	Resources(manifestName string, dns bpmconverter.DomainNameService, qStsVersion string, instanceGroup *bdm.InstanceGroup, releaseImageProvider bdm.ReleaseImageProvider, bpmConfigs bpm.Configs, igResolvedSecretVersion string) (*bpmconverter.Resources, error)
 }
 
-// DesiredManifest unmarshals desired manifest from the manifest secret
-type DesiredManifest interface {
-	DesiredManifest(ctx context.Context, deploymentName, namespace string) (*bdm.Manifest, error)
+// InstanceGroupManifest unmarshals a single instance group manifest from the versioned secret
+type InstanceGroupManifest interface {
+	InstanceGroupManifest(ctx context.Context, deploymentName, instanceGroupName, namespace string) (*bdm.Manifest, error)
 }
 
 var _ reconcile.Reconciler = &ReconcileBOSHDeployment{}
 
 // NewBPMReconciler returns a new reconcile.Reconciler
-func NewBPMReconciler(ctx context.Context, config *config.Config, mgr manager.Manager, resolver DesiredManifest, srf setReferenceFunc, converter BPMConverter, dns boshdns.NewDNSFunc) reconcile.Reconciler {
+func NewBPMReconciler(ctx context.Context, config *config.Config, mgr manager.Manager, resolver InstanceGroupManifest, srf setReferenceFunc, converter BPMConverter, dns boshdns.NewDNSFunc) reconcile.Reconciler {
 	return &ReconcileBPM{
 		ctx:                  ctx,
 		config:               config,
@@ -66,7 +66,7 @@ type ReconcileBPM struct {
 	config               *config.Config
 	client               client.Client
 	scheme               *runtime.Scheme
-	resolver             DesiredManifest
+	resolver             InstanceGroupManifest
 	setReference         setReferenceFunc
 	converter            BPMConverter
 	versionedSecretStore versionedsecretstore.VersionedSecretStore
@@ -102,44 +102,44 @@ func (r *ReconcileBPM) Reconcile(request reconcile.Request) (reconcile.Result, e
 		return reconcile.Result{RequeueAfter: r.config.MeltdownRequeueAfter}, nil
 	}
 
-	// Get the label from the BPM Secret and read the corresponding desired manifest
+	// Get the labels from the BPM Secret and read the corresponding instance group igManifest
 	var deploymentName string
 	var ok bool
 	if deploymentName, ok = bpmSecret.Labels[bdv1.LabelDeploymentName]; !ok {
 		return reconcile.Result{},
-			log.WithEvent(bpmSecret, "GetBOSHDeploymentLabel").Errorf(ctx, "There's no label for a BOSH Deployment name on the Instance Group BPM versioned bpmSecret '%s'", request.NamespacedName)
-	}
-	manifest, err := r.resolver.DesiredManifest(ctx, deploymentName, request.Namespace)
-	if err != nil {
-		return reconcile.Result{},
-			log.WithEvent(bpmSecret, "DesiredManifestReadError").Errorf(ctx, "Failed to read desired manifest '%s': %v", request.NamespacedName, err)
+			log.WithEvent(bpmSecret, "LabelMissingError").Errorf(ctx, "There's no label for a BOSH Deployment name on the BPM secret '%s'", request.NamespacedName)
 	}
 
-	dns, err := r.newDNSFunc(deploymentName, *manifest)
-	if err != nil {
+	var instanceGroupName string
+	if deploymentName, ok = bpmSecret.Labels[qjv1a1.LabelRemoteID]; !ok {
 		return reconcile.Result{},
-			log.WithEvent(bpmSecret, "DesiredManifestReadError").Errorf(ctx, "Failed to load BOSH DNS for manifest '%s': %v", request.NamespacedName, err)
+			log.WithEvent(bpmSecret, "LabelMissingError").Errorf(ctx, "There's no label for a instance group name on the BPM secret '%s'", request.NamespacedName)
 	}
 
-	// Apply BPM information
-	instanceGroupName, ok := bpmSecret.Labels[qjv1a1.LabelRemoteID]
-	if !ok {
+	igManifest, err := r.resolver.InstanceGroupManifest(ctx, deploymentName, instanceGroupName, request.Namespace)
+	if err != nil {
 		return reconcile.Result{},
-			log.WithEvent(bpmSecret, "LabelMissingError").Errorf(ctx, "Missing container label for bpm information bpmSecret '%s'", request.NamespacedName)
+			log.WithEvent(bpmSecret, "DesiredManifestReadError").Errorf(ctx, "Failed to read instance group manifest for bpm '%s': %v", request.NamespacedName, err)
+	}
+
+	dns, err := r.newDNSFunc(deploymentName, *igManifest)
+	if err != nil {
+		return reconcile.Result{},
+			log.WithEvent(bpmSecret, "DesiredManifestReadError").Errorf(ctx, "Failed to load BOSH DNS for instance group manifest for bpm '%s': %v", request.NamespacedName, err)
 	}
 
 	// Start the instance groups referenced by this BPM secret
-	instanceName, ok := bpmSecret.Labels[bdv1.LabelDeploymentName]
+	bdplName, ok := bpmSecret.Labels[bdv1.LabelDeploymentName]
 	if !ok {
 		return reconcile.Result{},
-			log.WithEvent(bpmSecret, "LabelMissingError").Errorf(ctx, "Missing deployment mame label for bpm information bpmSecret '%s'", request.NamespacedName)
+			log.WithEvent(bpmSecret, "LabelMissingError").Errorf(ctx, "Missing deployment mame label for bpm information secret '%s'", request.NamespacedName)
 	}
 
 	bdpl := &bdv1.BOSHDeployment{}
-	err = r.client.Get(ctx, types.NamespacedName{Namespace: request.Namespace, Name: instanceName}, bdpl)
+	err = r.client.Get(ctx, types.NamespacedName{Namespace: request.Namespace, Name: bdplName}, bdpl)
 	if err != nil {
 		return reconcile.Result{},
-			log.WithEvent(bpmSecret, "GetBOSHDeployment").Errorf(ctx, "Failed to get BoshDeployment instance '%s': %v", instanceName, err)
+			log.WithEvent(bpmSecret, "GetBOSHDeployment").Errorf(ctx, "Failed to get BoshDeployment instance '%s': %v", bdplName, err)
 	}
 
 	err = dns.Reconcile(ctx, request.Namespace, r.client, func(object metav1.Object) error {
@@ -151,7 +151,7 @@ func (r *ReconcileBPM) Reconcile(request reconcile.Request) (reconcile.Result, e
 			log.WithEvent(bpmSecret, "DnsReconcileError").Errorf(ctx, "Failed to reconcile dns: %v", err)
 	}
 
-	resources, err := r.applyBPMResources(bdpl.Name, bpmSecret, manifest, dns)
+	resources, err := r.applyBPMResources(bdpl.Name, bpmSecret, igManifest, dns)
 	if err != nil {
 		return reconcile.Result{},
 			log.WithEvent(bpmSecret, "BPMApplyingError").Errorf(ctx, "Failed to apply BPM information: %v", err)

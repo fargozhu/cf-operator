@@ -20,7 +20,7 @@ import (
 	bdm "code.cloudfoundry.org/cf-operator/pkg/bosh/manifest"
 	bdv1 "code.cloudfoundry.org/cf-operator/pkg/kube/apis/boshdeployment/v1alpha1"
 	"code.cloudfoundry.org/cf-operator/pkg/kube/util/boshdns"
-	"code.cloudfoundry.org/cf-operator/pkg/kube/util/desiredmanifest"
+	"code.cloudfoundry.org/cf-operator/pkg/kube/util/instancegroupmanifest"
 	"code.cloudfoundry.org/quarks-utils/pkg/config"
 	"code.cloudfoundry.org/quarks-utils/pkg/ctxlog"
 	"code.cloudfoundry.org/quarks-utils/pkg/meltdown"
@@ -36,7 +36,7 @@ func AddBPM(ctx context.Context, config *config.Config, mgr manager.Manager) err
 	ctx = ctxlog.NewContextWithRecorder(ctx, "bpm-reconciler", mgr.GetEventRecorderFor("bpm-recorder"))
 	r := NewBPMReconciler(
 		ctx, config, mgr,
-		desiredmanifest.NewDesiredManifest(mgr.GetClient()),
+		instancegroupmanifest.NewInstanceGroupManifest(mgr.GetClient()),
 		controllerutil.SetControllerReference,
 		bpmconverter.NewConverter(
 			config.Namespace,
