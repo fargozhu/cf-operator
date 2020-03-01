@@ -33,7 +33,9 @@ func NewInstanceGroupManifest(client client.Client) *InstanceGroupManifest {
 // and unmarshals it into a Manifest object
 func (r *InstanceGroupManifest) InstanceGroupManifest(ctx context.Context, boshDeploymentName, instanceGroupName, namespace string) (*bdm.Manifest, error) {
 	// unversioned instance group manifest name
-	secretName := names.InstanceGroupPropertiesName(boshDeploymentName, instanceGroupName, "")
+	secretName := names.InstanceGroupSecretName(
+		names.DeploymentSecretTypeInstanceGroupResolvedProperties,
+		boshDeploymentName, instanceGroupName, "")
 
 	secret, err := r.versionedSecretStore.Latest(ctx, namespace, secretName)
 	if err != nil {

@@ -101,12 +101,12 @@ func (kc *BPMConverter) Resources(manifestName string, dns DomainNameService, qS
 
 	switch instanceGroup.LifeCycle {
 	case bdm.IGTypeService, "":
-		convertedExtStatefulSet, err := kc.serviceToQuarksStatefulSet(cfac, manifestName, dns, instanceGroup, defaultDisks, bpmDisks)
+		convertedExtStatefulSet, err := kc.serviceToQuarksStatefulSet(cfac, manifestName, dns, instanceGroup, defaultDisks, bpmDisks, bpmConfigs.ActivePassiveProbes())
 		if err != nil {
 			return nil, err
 		}
 
-		services := kc.serviceToKubeServices(manifestName, dns, instanceGroup, &convertedExtStatefulSet)
+		services := kc.serviceToKubeServices(manifestName, dns, instanceGroup, &convertedExtStatefulSet, bpmConfigs.IsActivePassiveModel())
 		if len(services) != 0 {
 			res.Services = append(res.Services, services...)
 		}
@@ -132,6 +132,7 @@ func (kc *BPMConverter) serviceToQuarksStatefulSet(
 	instanceGroup *bdm.InstanceGroup,
 	defaultDisks disk.BPMResourceDisks,
 	bpmDisks disk.BPMResourceDisks,
+	activePassiveProbes map[string]corev1.Probe,
 ) (qstsv1a1.QuarksStatefulSet, error) {
 	defaultVolumeMounts := defaultDisks.VolumeMounts()
 	initContainers, err := cfac.JobsToInitContainers(instanceGroup.Jobs, defaultVolumeMounts, bpmDisks, instanceGroup.Properties.Quarks.RequiredService)
@@ -171,7 +172,7 @@ func (kc *BPMConverter) serviceToQuarksStatefulSet(
 		Spec: qstsv1a1.QuarksStatefulSetSpec{
 			Zones:                instanceGroup.AZs,
 			UpdateOnConfigChange: true,
-			ActivePassiveProbes:  instanceGroup.ActivePassiveProbes(),
+			ActivePassiveProbes:  activePassiveProbes,
 			Template: appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        instanceGroup.NameSanitized(),
@@ -229,19 +230,12 @@ func (kc *BPMConverter) serviceToQuarksStatefulSet(
 }
 
 // serviceToKubeServices will generate Services which expose ports for InstanceGroup's jobs
-func (kc *BPMConverter) serviceToKubeServices(manifestName string, dns DomainNameService, instanceGroup *bdm.InstanceGroup, qSts *qstsv1a1.QuarksStatefulSet) []corev1.Service {
+func (kc *BPMConverter) serviceToKubeServices(manifestName string, dns DomainNameService, instanceGroup *bdm.InstanceGroup, qSts *qstsv1a1.QuarksStatefulSet, activePassiveModel bool) []corev1.Service {
 	var services []corev1.Service
 	// Collect ports to be exposed for each job
 	ports := instanceGroup.ServicePorts()
 	if len(ports) == 0 {
 		return services
-	}
-
-	activePassiveModel := false
-	for _, job := range instanceGroup.Jobs {
-		if len(job.Properties.Quarks.ActivePassiveProbes) > 0 {
-			activePassiveModel = true
-		}
 	}
 
 	serviceLabels := func(azIndex, ordinal int, includeActiveSelector bool) map[string]string {
