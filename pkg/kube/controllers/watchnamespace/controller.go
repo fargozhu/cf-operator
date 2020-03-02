@@ -16,11 +16,13 @@ import (
 	"code.cloudfoundry.org/quarks-utils/pkg/config"
 )
 
+// Reconcile represents reconcile.Reconciler
 type Reconcile struct {
 }
 
 var _ reconcile.Reconciler = &Reconcile{}
 
+// Reconcile represents an empty reconciliation
 func (r *Reconcile) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	return reconcile.Result{}, nil
 }

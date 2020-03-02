@@ -191,6 +191,7 @@ func (c *Catalog) BOSHManifestWithActivePassiveProbes() (*manifest.Manifest, err
 	return m, nil
 }
 
+// BPMReleaseWithAffinityConfigMap returns a configmap with affinity spec
 func (c *Catalog) BPMReleaseWithAffinityConfigMap(name string) corev1.ConfigMap {
 	return corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
