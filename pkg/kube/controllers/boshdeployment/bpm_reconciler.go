@@ -111,7 +111,7 @@ func (r *ReconcileBPM) Reconcile(request reconcile.Request) (reconcile.Result, e
 	}
 
 	var instanceGroupName string
-	if deploymentName, ok = bpmSecret.Labels[qjv1a1.LabelRemoteID]; !ok {
+	if instanceGroupName, ok = bpmSecret.Labels[qjv1a1.LabelRemoteID]; !ok {
 		return reconcile.Result{},
 			log.WithEvent(bpmSecret, "LabelMissingError").Errorf(ctx, "There's no label for a instance group name on the BPM secret '%s'", request.NamespacedName)
 	}

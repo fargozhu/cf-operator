@@ -114,6 +114,8 @@ func (igr *InstanceGroupResolver) BPMInfo() (BPMInfo, error) {
 func (igr *InstanceGroupResolver) Manifest() (Manifest, error) {
 	// Filter igManifest to contain only relevant fields
 	igJobs := []Job{}
+	releases := []*Release{}
+	instances := 0
 	for _, job := range igr.instanceGroup.Jobs {
 		igQuarks := Quarks{
 			Consumes:         job.Properties.Quarks.Consumes,
@@ -132,12 +134,25 @@ func (igr *InstanceGroupResolver) Manifest() (Manifest, error) {
 		}
 
 		igJobs = append(igJobs, igJob)
+
+		release, err := igr.findRelease(job.Release)
+		if err != nil {
+			return Manifest{}, err
+		}
+		releases = append(releases, release)
+
+		instances = igr.instanceGroup.Instances
 	}
 
-	ig := &InstanceGroup{Name: igr.instanceGroup.Name, Jobs: igJobs}
+	ig := &InstanceGroup{
+		Name:      igr.instanceGroup.Name,
+		Jobs:      igJobs,
+		Instances: instances,
+	}
 
 	igManifest := Manifest{
 		InstanceGroups: []*InstanceGroup{ig},
+		Releases:       releases,
 	}
 
 	return igManifest, nil
@@ -466,6 +481,16 @@ func (igr *InstanceGroupResolver) renderJobBPM(currentJob *Job, jobSpecFile stri
 	}
 	currentJob.Properties.Quarks.BPM = &firstJobIndexBPM
 	return nil
+}
+
+func (igr *InstanceGroupResolver) findRelease(jobReleaseName string) (*Release, error) {
+	for _, release := range igr.manifest.Releases {
+		if jobReleaseName == release.Name {
+			return release, nil
+		}
+	}
+
+	return nil, errors.Errorf("cannot find the release info for '%s'", jobReleaseName)
 }
 
 // generateJobConsumersData will populate a job with its corresponding provider links
